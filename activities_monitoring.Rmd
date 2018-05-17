@@ -1,0 +1,159 @@
+---
+title: "Activities_P1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Steps
+
+## Loading and preprocessing the data
+```{r}
+# download data
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+destfile <- "repdata_data_activity.zip"
+download.file(url, destfile)
+# unzip data
+unzip("repdata_data_activity.zip",exdir = "data")
+``` 
+
+```{r}
+activity <- read.csv("data/activity.csv", stringsAsFactors=FALSE)
+str(activity)
+summary(activity)
+```
+```{r}
+head(activity)
+
+```
+
+```{r}
+# data set with NA rows removed
+activity <- activity[which(!is.na(activity$steps)), ]
+# further investigation 
+nlevels(as.factor(activity$steps))
+nlevels(as.factor(activity$date))
+nlevels(as.factor(activity$interval))
+```
+adjust date into POSIX
+```{r}
+class(activity$date)
+# turn date into 
+library(lubridate)
+activity$date <- ymd(activity$date)
+str(activity)
+
+class(activity$date)
+```
+
+## What is the average daily activity pattern?
+```{r}
+require(dplyr)
+# piping usage:
+total_day <- activity %>% group_by(date) %>%summarise(total_steps=sum(steps,na.rm=TRUE),na=mean(is.na(steps))) %>% print
+mean_steps <- mean(total_day$total_steps,na.rm=TRUE)
+median_steps <- median(total_day$total_steps,na.rm=TRUE)
+
+
+```
+```{r}
+barplot(height = total_day$total_steps,col="grey")
+abline(h=mean(total_day$total_steps), lwd=6, col="black")
+abline(h=median(total_day$total_steps), lty=15,lwd=4, col="blue")
+legend(legend=c("median","mean"),"topleft",lty=c(15,1),lwd=c(4,6), col=c("blue","black"))
+#legend(legend="mean","topleft", lwd=6, col="black")
+```
+
+```{r}
+total_day <- filter(total_day, na < 1)
+hist(total_day$total_steps,col="grey",breaks=20,main="steps/day",xlab="Steps per day")
+abline(v=median(total_day$total_steps),lty=5, lwd=2, col="black")
+legend(legend="median","topright",lty=3,lwd=2,bty = "n")
+mean_steps <- mean(total_day$total_steps,na.rm=TRUE)
+median_steps <- median(total_day$total_steps,na.rm=TRUE)
+```
+
+## What is the average daily activity pattern?
+```{r}
+library(dplyr,quietly = TRUE)
+daily_patterns <- activity %>% group_by(interval) %>% summarise(average=mean(steps,na.rm=TRUE))
+plot(x = 1:nrow(daily_patterns),y = daily_patterns$average,type = "l",
+     col = "red", xaxt = "n",xlab="Intervals", 
+     ylab = "Average for given interval across all days")
+axis(1,labels=daily_patterns$interval[seq(1,288,12)],
+     at = seq_along(daily_patterns$interval)[seq(1,288,12)])
+```
+```{r}
+max_numb_steps_interval <- filter(daily_patterns,average==max(average))
+max_numb_steps_interval
+```
+
+## Imputing missing data
+```{r}
+activity2 <- split(activity, activity$interval)
+activity2 <- lapply(activity2, function(x) {
+        x$steps[which(is.na(x$steps))] <- mean(x$steps, na.rm = TRUE)
+        return(x)
+})
+activity2 <- do.call("rbind", activity2)
+row.names(activity2) <- NULL
+
+activity2 <- split(activity2, activity2$date)
+df <- lapply(activity2, function(x) {
+        x$steps[which(is.na(x$steps))] <- mean(x$steps, na.rm = TRUE)
+        return(x)
+})
+activity2 <- do.call("rbind", activity2)
+row.names(activity2) <- NULL
+head(activity2)
+```
+```{r include=FALSE}
+# making another data without NAs
+na_number <- sum(is.na(activity$steps))
+na_number
+percentage_na <- mean(is.na(activity$steps))
+percentage_na
+without_NAs <- numeric(nrow(activity))
+for (i in 1:nrow(activity))
+{
+        if (is.na(activity[i,"steps"])==TRUE)
+            {
+                    without_NAs[i]<-filter(daily_patterns,interval==activity[i,"interval"]) %>% select(average)
+            } 
+        else
+            {
+                    without_NAs[i]<-activity[i,"steps"]
+            }
+                    
+}
+activity_without_NAs<-mutate(activity,steps_no_NAs=without_NAs)
+head(activity_without_NAs)
+total_day_noNAs <- activity_without_NAs %>% mutate(steps_no_NAs=as.numeric(steps_no_NAs)) %>% group_by(date) %>% summarise(total_steps=sum(steps_no_NAs))
+hist(total_day_noNAs$total_steps,col="blue",breaks=20,main="Total steps per day",xlab="Steps per day")
+abline(v=median(total_day$total_steps),lty=3, lwd=2, col="black")
+legend(legend="median","topright",lty=3,lwd=2,bty = "n")
+```
+
+## Are there differences in activity patterns between weekdays and weekends?
+```{r}
+library(lubridate)
+is_weekday <-function(date){
+        if(wday(date)%in%c(1,7)) result<-"weekend"
+        else
+                result<-"weekday"
+        result
+}
+
+activity_without_NAs <- mutate(activity_without_NAs,date=ymd(date)) %>% mutate(day=sapply(date,is_weekday))
+
+table(activity_without_NAs$day)
+
+```
+```{r}
+library(ggplot2)
+daily_patterns <- activity_without_NAs %>% mutate(day=factor(day,levels=c("weekend","weekday")),steps_no_NAs=as.numeric(steps_no_NAs)) %>% group_by(interval,day) %>% summarise(average=mean(steps_no_NAs))
+qplot(interval,average,data=daily_patterns,geom="line",facets=day~.)
+```
+
